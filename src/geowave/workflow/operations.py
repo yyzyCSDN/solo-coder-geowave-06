@@ -8,7 +8,13 @@ from geowave.signal.normalize import peak_normalize, rms_normalize, surface_cons
 from geowave.signal.q_compensation import inverse_q_trace
 from geowave.signal.mute import top_mute, bottom_mute, linear_offset_mute
 from geowave.signal.deconvolution import spiking_decon, predictive_decon
+from geowave.demultiple.pipeline import SrmeConfig, run_srme
 from .executor import Executor
+
+def _srme(dataset: TraceSet, p: dict[str, object]) -> TraceSet:
+    fields = {k: v for k, v in p.items() if k in SrmeConfig.__dataclass_fields__}
+    typed = {k: (bool(v) if k == 'use_reciprocity' else float(v) if k in ('station_spacing_m', 'fmin_hz', 'fmax_hz', 'window_s', 'window_overlap', 'filter_length_s', 'filter_lag_s', 'prewhiten', 'max_removal', 'similarity_limit', 'near_offset_vrms_m_s') else int(v)) for k, v in fields.items()}
+    return run_srme(dataset, SrmeConfig(**typed)).primary
 
 def _map(dataset: TraceSet, fn, tag: str) -> TraceSet:
     return TraceSet([fn(t) for t in dataset.traces], dataset.name + '-' + tag)
@@ -32,4 +38,5 @@ def build_default_executor() -> Executor:
     ex.register('linear_mute', lambda ds, p: _map(ds, lambda t: linear_offset_mute(t, float(p['intercept_s']), float(p['slope_s_per_m']), float(p.get('taper_s', 0.02))), 'linmute'))
     ex.register('spiking_decon', lambda ds, p: _map(ds, lambda t: spiking_decon(t, int(p.get('operator_length', 32)), float(p.get('prewhiten', 0.01))), 'spikedecon'))
     ex.register('predictive_decon', lambda ds, p: _map(ds, lambda t: predictive_decon(t, int(p['prediction_lag']), int(p.get('operator_length', 32)), float(p.get('prewhiten', 0.01))), 'preddecon'))
+    ex.register('srme', _srme)
     return ex
